@@ -1,4 +1,4 @@
-#  Copyright 2015-present The Scikit Flow Authors. All Rights Reserved.
+#  Copyright 2016 The TensorFlow Authors. All Rights Reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -28,11 +28,11 @@ X, y = boston.data, boston.target
 X_train, X_test, y_train, y_test = cross_validation.train_test_split(X, y,
     test_size=0.2, random_state=42)
 
-# scale data (training set) to 0 mean and unit Std. dev
+# Scale data (training set) to 0 mean and unit standard deviation.
 scaler = preprocessing.StandardScaler()
 X_train = scaler.fit_transform(X_train)
 
-# Build 2 layer fully connected DNN with 10, 10 units respecitvely.
+# Build 2 layer fully connected DNN with 10, 10 units respectively.
 regressor = skflow.TensorFlowDNNRegressor(hidden_units=[10, 10],
     steps=5000, learning_rate=0.1, batch_size=1)
 
@@ -40,6 +40,6 @@ regressor = skflow.TensorFlowDNNRegressor(hidden_units=[10, 10],
 regressor.fit(X_train, y_train)
 
 # Predict and score
-score = metrics.mean_squared_error(regressor.predict(scaler.fit_transform(X_test)), y_test)
+score = metrics.mean_squared_error(regressor.predict(scaler.transform(X_test)), y_test)
 
 print('MSE: {0:f}'.format(score))

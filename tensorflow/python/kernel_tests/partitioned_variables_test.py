@@ -22,6 +22,117 @@ import numpy as np
 from six.moves import xrange  # pylint: disable=redefined-builtin
 import tensorflow as tf
 
+from tensorflow.python.ops import variable_scope
+
+# pylint: disable=protected-access
+get_partitioned_variable_list = variable_scope._get_partitioned_variable_list
+# pylint: enable=protected-access
+
+
+class PartitionerCreatorsTest(tf.test.TestCase):
+
+  def _testVariableAxisSizePartitioner(self, name, axis, max_shard_bytes,
+                                       expected_axis_shards,
+                                       expected_partitions,
+                                       max_shards=None):
+    partitioner = tf.variable_axis_size_partitioner(
+        axis=axis, max_shard_bytes=max_shard_bytes, max_shards=max_shards)
+
+    with tf.variable_scope("root", partitioner=partitioner):
+      v0_list, v0_part = get_partitioned_variable_list(
+          name, dtype=tf.float32, shape=(4, 8, 16, 32))
+      self.assertEqual(len(v0_list), expected_axis_shards)
+      self.assertAllEqual(v0_part, expected_partitions)
+
+  def testVariableAxisSizePartitioner(self):
+    with self.test_session():
+      # Create a partitioned variable of shape (4, 8, 16, 32) type float32
+      # Bytes per slice along the given axes:
+
+      # 8 * 16 * 32 * sizeof(float32) = 16384 / slice on axis 0
+      # 4 * 16 * 32 * sizeof(float32) = 8192 / slice on axis 1
+      # 4 * 8 * 32 * sizeof(float32) = 4096 / slice on axis 2
+      # 4 * 8 * 16 * sizeof(float32) = 2048 / slice on axis 3
+
+      # Now partition it in different ways...
+
+      # No need to slice: bytes_per_slice * dim0 = 65536 < max_shard_bytes
+      self._testVariableAxisSizePartitioner("v0", axis=0,
+                                            max_shard_bytes=131072,
+                                            expected_axis_shards=1,
+                                            expected_partitions=(1, 1, 1, 1))
+
+      # Slice exactly once: bytes_per_slice * dim1 = 65536 = max_shard_bytes
+      self._testVariableAxisSizePartitioner("v1", axis=1,
+                                            max_shard_bytes=65536,
+                                            expected_axis_shards=1,
+                                            expected_partitions=(1, 1, 1, 1))
+
+      # Slice into 2 parts:
+      # bytes_per_slice = 4096
+      # slices_per_shard = 32768 / 4096 = 8
+      # axis_shards = 16 / 8 = 2
+      self._testVariableAxisSizePartitioner("v2", axis=2,
+                                            max_shard_bytes=32768,
+                                            expected_axis_shards=2,
+                                            expected_partitions=(1, 1, 2, 1))
+
+      # This partitioner makes sure we maximize the number of shards along
+      # axis 3. Slice it into 32 parts:
+      # bytes_per_slice = 2048
+      # slices_per_shard = 2048 / 2048 = 1
+      # axis_shards = 32 / 1 = 32
+      self._testVariableAxisSizePartitioner("v3a", axis=3,
+                                            max_shard_bytes=2048,
+                                            expected_axis_shards=32,
+                                            expected_partitions=(1, 1, 1, 32))
+
+      # This partitioner makes sure we do not go past the bound of allowable
+      # number of shards along axis 3.
+      # Slice into 32 parts:
+      # bytes_per_slice = 2048
+      # slices_per_shard = max(1, 1024 / 2048) = 1
+      # axis_shards = 32 / 1 = 32
+      # Slice into max of 32 parts because: max_shard_bytes < bytes_per_slice
+      self._testVariableAxisSizePartitioner("v3b", axis=3,
+                                            max_shard_bytes=1024,
+                                            expected_axis_shards=32,
+                                            expected_partitions=(1, 1, 1, 32))
+
+      # Specify max_shards so that it won't affect sharding.
+      self._testVariableAxisSizePartitioner("v3c", axis=3,
+                                            max_shard_bytes=1024,
+                                            expected_axis_shards=32,
+                                            expected_partitions=(1, 1, 1, 32),
+                                            max_shards=33)
+
+      # Specify max_shards so that it will affect sharding.
+      self._testVariableAxisSizePartitioner("v3d", axis=3,
+                                            max_shard_bytes=1024,
+                                            expected_axis_shards=2,
+                                            expected_partitions=(1, 1, 1, 2),
+                                            max_shards=2)
+
+      # Use the partitioner with strings
+      partitioner_axis3_str = tf.variable_axis_size_partitioner(
+          axis=3, max_shard_bytes=32768, bytes_per_string_element=8)
+
+      with tf.variable_scope("root", partitioner=partitioner_axis3_str):
+        v3str_list, v3str_part = get_partitioned_variable_list(
+            "v3str",
+            initializer=np.array([""] * 4*8*16*32).reshape(4, 8, 16, 32),
+            dtype=tf.string, shape=(4, 8, 16, 32))
+
+        # Now the estimated bytes_per_slice = 4*8*16*bytes_per_string_element
+        # which is equal to 4096.  Setting a max_shard_bytes of 32768
+        # and we should get a split of 4.
+        # Slice into 4 parts:
+        # bytes_per_slice = 4096
+        # slices_per_shard = 32768 / 4096 = 8
+        # axis_shards = 32 / 8 = 4
+        self.assertEqual(len(v3str_list), 4)
+        self.assertAllEqual(v3str_part, (1, 1, 1, 4))
+
 
 def _IotaInitializer(shape, dtype=tf.float32):
   assert dtype == tf.float32

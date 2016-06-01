@@ -28,8 +28,8 @@ filegroup(
 load(
     "//tensorflow:tensorflow.bzl",
     "tf_cuda_library",
-    "tf_cc_tests",
 )
+load("//tensorflow:tensorflow.bzl", "tf_cuda_cc_tests")
 
 # For platform specific build config
 load(
@@ -74,11 +74,11 @@ cc_library(
         "@grpc//:grpc++_unsecure",
         ":grpc_client_cq_tag",
         ":grpc_util",
+        "//tensorflow/core:core_cpu_internal",
         "//tensorflow/core:lib",
         "//tensorflow/core:lib_internal",
         "//tensorflow/core:worker_proto_cc",
         "//tensorflow/core:worker_service_proto_cc",
-        "//tensorflow/core/distributed_runtime:process_util",
         "//tensorflow/core/distributed_runtime:worker_cache_logger",
         "//tensorflow/core/distributed_runtime:worker_interface",
     ],
@@ -143,11 +143,9 @@ cc_library(
         "//tensorflow/core:gpu_runtime",
         "//tensorflow/core:lib",
         "//tensorflow/core:lib_internal",
-        "//tensorflow/core:tensorflow_opensource",
         "//tensorflow/core:worker_proto_cc",
         "//tensorflow/core:worker_service_proto_cc",
         "//tensorflow/core/distributed_runtime:graph_mgr",
-        "//tensorflow/core/distributed_runtime:process_util",
         "//tensorflow/core/distributed_runtime:rendezvous_mgr_interface",
         "//tensorflow/core/distributed_runtime:worker_cache",
         "//tensorflow/core/distributed_runtime:worker_env",
@@ -197,9 +195,7 @@ cc_library(
         "//tensorflow/core:core_cpu_internal",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
-        "//tensorflow/core:tensorflow_opensource",
         "//tensorflow/core/distributed_runtime:base_rendezvous_mgr",
-        "//tensorflow/core/distributed_runtime:process_util",
         "//tensorflow/core/distributed_runtime:worker_cache",
         "//tensorflow/core/distributed_runtime:worker_env",
         "//tensorflow/core/distributed_runtime:worker_interface",
@@ -228,7 +224,6 @@ cc_library(
         "//tensorflow/core/distributed_runtime:graph_mgr",
         "//tensorflow/core/distributed_runtime:master_env",
         "//tensorflow/core/distributed_runtime:master_session",
-        "//tensorflow/core/distributed_runtime:process_util",
         "//tensorflow/core/distributed_runtime:server_lib",
         "//tensorflow/core/distributed_runtime:worker_env",
     ],
@@ -258,7 +253,6 @@ tf_cuda_library(
     srcs = ["grpc_testlib_ops.cc"],
     linkstatic = 1,  # Seems to be needed since alwayslink is broken in bazel
     deps = [
-        "//tensorflow/core:all_kernels",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
     ],
@@ -279,6 +273,13 @@ cc_binary(
         "//tensorflow/core:framework_internal",
         "//tensorflow/core:lib",
         "//tensorflow/core/distributed_runtime:server_lib",
+        "//tensorflow/core/kernels:constant_op",
+        "//tensorflow/core/kernels:cwise_op",
+        "//tensorflow/core/kernels:dense_update_ops",
+        "//tensorflow/core/kernels:identity_op",
+        "//tensorflow/core/kernels:matmul_op",
+        "//tensorflow/core/kernels:reduction_ops",
+        "//tensorflow/core/kernels:variable_ops",
     ],
 )
 
@@ -297,7 +298,6 @@ tf_cuda_library(
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
         "//tensorflow/core:protos_all_cc",
-        "//tensorflow/core:tensorflow_opensource",
         "//tensorflow/core:test",
     ],
     alwayslink = 1,
@@ -316,17 +316,20 @@ cc_library(
         "//tensorflow/core:lib",
         "//tensorflow/core:master_proto_cc",
         "//tensorflow/core:protos_all_cc",
-        "//tensorflow/core:tensorflow",
         "//tensorflow/core/distributed_runtime:call_options",
         "//tensorflow/core/distributed_runtime:master_interface",
     ],
     alwayslink = 1,
 )
 
-tf_cc_tests(
+tf_cuda_cc_tests(
     size = "small",
+    linkopts = select({
+        "//tensorflow:darwin": ["-headerpad_max_install_names"],
+        "//conditions:default": [],
+    }),
     linkstatic = tf_kernel_tests_linkstatic(),
-    tags = tf_cuda_tests_tags() + ["exclusive"],
+    tags = tf_cuda_tests_tags() + [],
     tests = [
         "grpc_channel_test.cc",
         "rpc_rendezvous_mgr_test.cc",
@@ -338,6 +341,7 @@ tf_cc_tests(
         ":grpc_testlib",
         ":rpc_rendezvous_mgr",
         "//tensorflow/core:core_cpu",
+        "//tensorflow/core:core_cpu_internal",
         "//tensorflow/core:framework",
         "//tensorflow/core:lib",
         "//tensorflow/core:master_proto_cc",
@@ -345,15 +349,14 @@ tf_cc_tests(
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
         "//tensorflow/core:testlib",
-        "//tensorflow/core/distributed_runtime:process_util",
         "//tensorflow/core/distributed_runtime:server_lib",
     ],
 )
 
-tf_cc_tests(
+tf_cuda_cc_tests(
     size = "medium",
     linkstatic = tf_kernel_tests_linkstatic(),
-    tags = tf_cuda_tests_tags() + ["exclusive"],
+    tags = tf_cuda_tests_tags() + [],
     tests = [
         "grpc_session_test.cc",
     ],
@@ -371,7 +374,10 @@ tf_cc_tests(
         "//tensorflow/core:test",
         "//tensorflow/core:test_main",
         "//tensorflow/core:testlib",
-        "//tensorflow/core/distributed_runtime:process_util",
         "//tensorflow/core/distributed_runtime:server_lib",
+        "//tensorflow/core/kernels:constant_op",
+        "//tensorflow/core/kernels:dense_update_ops",
+        "//tensorflow/core/kernels:matmul_op",
+        "//tensorflow/core/kernels:variable_ops",
     ],
 )

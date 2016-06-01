@@ -81,6 +81,9 @@ class GPUAllocatorRetryTest : public ::testing::Test {
                   return;
                 }
               }
+              // Failures are more likely to occur if each consumer
+              // delays for a while before returning the memory.
+              Env::Default()->SleepForMicroseconds(500);
               ++consumer_count_[i];
               for (int j = 0; j < cap_needed; ++j) {
                 alloc_->DeallocateRaw(ptr);
@@ -142,7 +145,9 @@ TEST_F(GPUAllocatorRetryTest, RetrySuccess) {
 }
 
 // Verifies OutOfMemory failure when memory is slightly overcommitted
-// and retry is not allowed.
+// and retry is not allowed.  Note that this test will fail, i.e. no
+// memory alloc failure will be detected, if it is run in a context that
+// does not permit real multi-threaded execution.
 TEST_F(GPUAllocatorRetryTest, NoRetryFail) {
   // Support up to 2 allocations simultaneously, waits up to 0 msec for
   // a chance to alloc.

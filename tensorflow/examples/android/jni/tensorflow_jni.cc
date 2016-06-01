@@ -48,9 +48,9 @@ static std::vector<std::string> g_label_strings;
 static bool g_compute_graph_initialized = false;
 //static mutex g_compute_graph_mutex(base::LINKER_INITIALIZED);
 
-static int g_tensorflow_input_size;  // The image size for the mognet input.
+static int g_tensorflow_input_size;  // The image size for the model input.
 static int g_image_mean;  // The image mean.
-static StatSummarizer g_stats;
+static std::unique_ptr<StatSummarizer> g_stats;
 
 // For basic benchmarking.
 static int g_num_runs = 0;
@@ -82,14 +82,11 @@ inline static int64 CurrentThreadTimeUs() {
   return tv.tv_sec * 1000000 + tv.tv_usec;
 }
 
-JNIEXPORT jint JNICALL
-TENSORFLOW_METHOD(initializeTensorflow)(
-    JNIEnv* env, jobject thiz, jobject java_asset_manager,
-    jstring model, jstring labels,
-    jint num_classes, jint mognet_input_size, jint image_mean) {
+JNIEXPORT jint JNICALL TENSORFLOW_METHOD(initializeTensorflow)(
+    JNIEnv* env, jobject thiz, jobject java_asset_manager, jstring model,
+    jstring labels, jint num_classes, jint model_input_size, jint image_mean) {
   g_num_runs = 0;
   g_timing_total_us = 0;
-  g_stats.Reset();
   g_frequency_start.Reset();
   g_frequency_end.Reset();
 
@@ -99,10 +96,12 @@ TENSORFLOW_METHOD(initializeTensorflow)(
     return 0;
   }
 
+  const int64 start_time = CurrentThreadTimeUs();
+
   const char* const model_cstr = env->GetStringUTFChars(model, NULL);
   const char* const labels_cstr = env->GetStringUTFChars(labels, NULL);
 
-  g_tensorflow_input_size = mognet_input_size;
+  g_tensorflow_input_size = model_input_size;
   g_image_mean = image_mean;
 
   LOG(INFO) << "Loading Tensorflow.";
@@ -125,6 +124,8 @@ TENSORFLOW_METHOD(initializeTensorflow)(
   LOG(INFO) << "Reading file to proto: " << model_cstr;
   ReadFileToProto(asset_manager, model_cstr, &tensorflow_graph);
 
+  g_stats.reset(new StatSummarizer(tensorflow_graph));
+
   LOG(INFO) << "Creating session.";
   tensorflow::Status s = session->Create(tensorflow_graph);
   if (!s.ok()) {
@@ -141,6 +142,10 @@ TENSORFLOW_METHOD(initializeTensorflow)(
   LOG(INFO) << g_label_strings.size() << " label strings loaded from: "
             << labels_cstr;
   g_compute_graph_initialized = true;
+
+  const int64 end_time = CurrentThreadTimeUs();
+  LOG(INFO) << "Initialization done in " << (end_time - start_time) / 1000
+            << "ms";
 
   return 0;
 }
@@ -268,8 +273,8 @@ static std::string ClassifyImage(const RGBA* const bitmap_src,
     if (kLogDetailedStats) {
       LOG(INFO) << "CPU frequency start: " << g_frequency_start;
       LOG(INFO) << "CPU frequency end:   " << g_frequency_end;
-      g_stats.ProcessStepStats(stats);
-      g_stats.PrintStepStats();
+      g_stats->ProcessStepStats(stats);
+      g_stats->PrintStepStats();
     }
 
     if (kSaveStepStats) {

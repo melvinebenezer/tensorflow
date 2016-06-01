@@ -27,7 +27,7 @@ Computes rectified linear: `max(features, 0)`.
 ##### Args:
 
 
-*  <b>`features`</b>: A `Tensor`. Must be one of the following types: `float32`, `float64`, `int32`, `int64`, `uint8`, `int16`, `int8`, `uint16`.
+*  <b>`features`</b>: A `Tensor`. Must be one of the following types: `float32`, `float64`, `int32`, `int64`, `uint8`, `int16`, `int8`, `uint16`, `half`.
 *  <b>`name`</b>: A name for the operation (optional).
 
 ##### Returns:
@@ -82,7 +82,7 @@ Computes softplus: `log(exp(features) + 1)`.
 ##### Args:
 
 
-*  <b>`features`</b>: A `Tensor`. Must be one of the following types: `float32`, `float64`, `int32`, `int64`, `uint8`, `int16`, `int8`, `uint16`.
+*  <b>`features`</b>: A `Tensor`. Must be one of the following types: `float32`, `float64`, `int32`, `int64`, `uint8`, `int16`, `int8`, `uint16`, `half`.
 *  <b>`name`</b>: A name for the operation (optional).
 
 ##### Returns:
@@ -99,7 +99,7 @@ Computes softsign: `features / (abs(features) + 1)`.
 ##### Args:
 
 
-*  <b>`features`</b>: A `Tensor`. Must be one of the following types: `float32`, `float64`, `int32`, `int64`, `uint8`, `int16`, `int8`, `uint16`.
+*  <b>`features`</b>: A `Tensor`. Must be one of the following types: `float32`, `float64`, `int32`, `int64`, `uint8`, `int16`, `int8`, `uint16`, `half`.
 *  <b>`name`</b>: A name for the operation (optional).
 
 ##### Returns:
@@ -163,11 +163,11 @@ case where both types are quantized.
 
 
 *  <b>`value`</b>: A `Tensor` with type `float`, `double`, `int64`, `int32`, `uint8`,
-    `int16`, `int8`, or `complex64`.
+    `int16`, `int8`, `complex64` or `complex128`.
 *  <b>`bias`</b>: A 1-D `Tensor` with size matching the last dimension of `value`.
     Must be the same type as `value` unless `value` is a quantized type,
     in which case a different quantized type may be used.
-*  <b>`data_format`</b>: A string. 'NHWC' and 'NCHW" are supported.
+*  <b>`data_format`</b>: A string. 'NHWC' and 'NCHW' are supported.
 *  <b>`name`</b>: A name for the operation (optional).
 
 ##### Returns:
@@ -186,7 +186,7 @@ Specifically, `y = 1 / (1 + exp(-x))`.
 ##### Args:
 
 
-*  <b>`x`</b>: A Tensor with type `float`, `double`, `int32`, `complex64`, `int64`,
+*  <b>`x`</b>: A Tensor with type `float`, `double`, `int32`, `complex64`, `complex128`, `int64`,
     or `qint32`.
 *  <b>`name`</b>: A name for the operation (optional).
 
@@ -205,7 +205,7 @@ Computes hyperbolic tangent of `x` element-wise.
 ##### Args:
 
 
-*  <b>`x`</b>: A Tensor with type `float`, `double`, `int32`, `complex64`, `int64`,
+*  <b>`x`</b>: A Tensor with type `float`, `double`, `int32`, `complex64`, `complex128`, `int64`,
     or `qint32`.
 *  <b>`name`</b>: A name for the operation (optional).
 
@@ -303,7 +303,7 @@ performs the following:
 3. For each patch, right-multiplies the filter matrix and the image patch
    vector.
 
-In detail, with the default NCHW format,
+In detail, with the default NHWC format,
 
     output[b, i, j, k] =
         sum_{di, dj, q} input[b, strides[1] * i + di, strides[2] * j + dj, q] *
@@ -315,7 +315,7 @@ horizontal and vertices strides, `strides = [1, stride, stride, 1]`.
 ##### Args:
 
 
-*  <b>`input`</b>: A `Tensor`. Must be one of the following types: `float32`, `float64`.
+*  <b>`input`</b>: A `Tensor`. Must be one of the following types: `half`, `float32`, `float64`.
 *  <b>`filter`</b>: A `Tensor`. Must have the same type as `input`.
 *  <b>`strides`</b>: A list of `ints`.
     1-D of length 4.  The stride of the sliding window for each dimension
@@ -418,6 +418,122 @@ horizontal and vertical strides, `strides = [1, stride, stride, 1]`.
 
   A 4-D `Tensor` of shape `[batch, out_height, out_width, out_channels]`.
 
+##### Raises:
+
+
+*  <b>`ValueError`</b>: If channel_multiplier * in_channels > out_channels,
+    which means that the separable convolution is overparameterized.
+
+
+- - -
+
+### `tf.nn.atrous_conv2d(value, filters, rate, padding, name=None)` {#atrous_conv2d}
+
+Atrous convolution (a.k.a. convolution with holes or dilated convolution).
+
+Computes a 2-D atrous convolution, also known as convolution with holes or
+dilated convolution, given 4-D `value` and `filters` tensors. If the `rate`
+parameter is equal to one, it performs regular 2-D convolution. If the `rate`
+parameter is greater than one, it performs convolution with holes, sampling
+the input values every `rate` pixels in the `height` and `width` dimensions.
+This is equivalent to convolving the input with a set of upsampled filters,
+produced by inserting `rate - 1` zeros between two consecutive values of the
+filters along the `height` and `width` dimensions, hence the name atrous
+convolution or convolution with holes (the French word trous means holes in
+English).
+
+More specifically:
+
+    output[b, i, j, k] = sum_{di, dj, q} filters[di, dj, q, k] *
+          value[b, i + rate * di, j + rate * dj, q]
+
+Atrous convolution allows us to explicitly control how densely to compute
+feature responses in fully convolutional networks. Used in conjunction with
+bilinear interpolation, it offers an alternative to `conv2d_transpose` in
+dense prediction tasks such as semantic image segmentation, optical flow
+computation, or depth estimation. It also allows us to effectively enlarge
+the field of view of filters without increasing the number of parameters or
+the amount of computation.
+
+For a description of atrous convolution and how it can be used for dense
+feature extraction, please see: [Semantic Image Segmentation with Deep
+Convolutional Nets and Fully Connected CRFs](http://arxiv.org/abs/1412.7062).
+The same operation is investigated further in [Multi-Scale Context Aggregation
+by Dilated Convolutions](http://arxiv.org/abs/1511.07122). Previous works
+that effectively use atrous convolution in different ways are, among others,
+[OverFeat: Integrated Recognition, Localization and Detection using
+Convolutional Networks](http://arxiv.org/abs/1312.6229) and [Fast Image
+Scanning with Deep Max-Pooling Convolutional Neural Networks]
+(http://arxiv.org/abs/1302.1700). Atrous convolution is also closely related
+to the so-called noble identities in multi-rate signal processing.
+
+There are many different ways to implement atrous convolution (see the refs
+above). The implementation here reduces
+
+    atrous_conv2d(value, filters, rate, padding=padding)
+
+to the following three operations:
+
+    paddings = ...
+    net = space_to_batch(value, paddings, block_size=rate)
+    net = conv2d(net, filters, strides=[1, 1, 1, 1], padding="VALID")
+    crops = ...
+    net = batch_to_space(net, crops, block_size=rate)
+
+Advanced usage. Note the following optimization: A sequence of `atrous_conv2d`
+operations with identical `rate` parameters, 'SAME' `padding`, and filters
+with odd heights/ widths:
+
+    net = atrous_conv2d(net, filters1, rate, padding="SAME")
+    net = atrous_conv2d(net, filters2, rate, padding="SAME")
+    ...
+    net = atrous_conv2d(net, filtersK, rate, padding="SAME")
+
+can be equivalently performed cheaper in terms of computation and memory as:
+
+    pad = ...  # padding so that the input dims are multiples of rate
+    net = space_to_batch(net, paddings=pad, block_size=rate)
+    net = conv2d(net, filters1, strides=[1, 1, 1, 1], padding="SAME")
+    net = conv2d(net, filters2, strides=[1, 1, 1, 1], padding="SAME")
+    ...
+    net = conv2d(net, filtersK, strides=[1, 1, 1, 1], padding="SAME")
+    net = batch_to_space(net, crops=pad, block_size=rate)
+
+because a pair of consecutive `space_to_batch` and `batch_to_space` ops with
+the same `block_size` cancel out when their respective `paddings` and `crops`
+inputs are identical.
+
+##### Args:
+
+
+*  <b>`value`</b>: A 4-D `Tensor` of type `float`. It needs to be in the default "NHWC"
+    format. Its shape is `[batch, in_height, in_width, in_channels]`.
+*  <b>`filters`</b>: A 4-D `Tensor` with the same type as `value` and shape
+    `[filter_height, filter_width, in_channels, out_channels]`. `filters`'
+    `in_channels` dimension must match that of `value`. Atrous convolution is
+    equivalent to standard convolution with upsampled filters with effective
+    height `filter_height + (filter_height - 1) * (rate - 1)` and effective
+    width `filter_width + (filter_width - 1) * (rate - 1)`, produced by
+    inserting `rate - 1` zeros along consecutive elements across the
+    `filters`' spatial dimensions.
+*  <b>`rate`</b>: A positive int32. The stride with which we sample input values across
+    the `height` and `width` dimensions. Equivalently, the rate by which we
+    upsample the filter values by inserting zeros across the `height` and
+    `width` dimensions. In the literature, the same parameter is sometimes
+    called `input stride` or `dilation`.
+*  <b>`padding`</b>: A string, either `'VALID'` or `'SAME'`. The padding algorithm.
+*  <b>`name`</b>: Optional name for the returned tensor.
+
+##### Returns:
+
+  A `Tensor` with the same type as `value`.
+
+##### Raises:
+
+
+*  <b>`ValueError`</b>: If input/output depth does not match `filters`' shape, or if
+    padding is other than `'VALID'` or `'SAME'`.
+
 
 - - -
 
@@ -425,8 +541,8 @@ horizontal and vertical strides, `strides = [1, stride, stride, 1]`.
 
 The transpose of `conv2d`.
 
-This operation is sometimes called "deconvolution" after (Deconvolutional
-Networks)[http://www.matthewzeiler.com/pubs/cvpr2010/cvpr2010.pdf], but is
+This operation is sometimes called "deconvolution" after [Deconvolutional
+Networks](http://www.matthewzeiler.com/pubs/cvpr2010/cvpr2010.pdf), but is
 actually the transpose (gradient) of `conv2d` rather than an actual
 deconvolution.
 
@@ -454,6 +570,38 @@ deconvolution.
 
 *  <b>`ValueError`</b>: If input/output depth does not match `filter`'s shape, or if
     padding is other than `'VALID'` or `'SAME'`.
+
+
+- - -
+
+### `tf.nn.conv3d(input, filter, strides, padding, name=None)` {#conv3d}
+
+Computes a 3-D convolution given 5-D `input` and `filter` tensors.
+
+In signal processing, cross-correlation is a measure of similarity of
+two waveforms as a function of a time-lag applied to one of them. This
+is also known as a sliding dot product or sliding inner-product.
+
+Our Conv3D implements a form of cross-correlation.
+
+##### Args:
+
+
+*  <b>`input`</b>: A `Tensor`. Must be one of the following types: `float32`, `float64`, `int64`, `int32`, `uint8`, `uint16`, `int16`, `int8`, `complex64`, `complex128`, `qint8`, `quint8`, `qint32`, `half`.
+    Shape `[batch, in_depth, in_height, in_width, in_channels]`.
+*  <b>`filter`</b>: A `Tensor`. Must have the same type as `input`.
+    Shape `[filter_depth, filter_height, filter_width, in_channels, out_channels]`.
+    `in_channels` must match between `input` and `filter`.
+*  <b>`strides`</b>: A list of `ints` that has length `>= 5`.
+    1-D tensor of length 5. The stride of the sliding window for each
+    dimension of `input`. Must have `strides[0] = strides[4] = 1`.
+*  <b>`padding`</b>: A `string` from: `"SAME", "VALID"`.
+    The type of padding algorithm to use.
+*  <b>`name`</b>: A name for the operation (optional).
+
+##### Returns:
+
+  A `Tensor`. Has the same type as `input`.
 
 
 
@@ -492,7 +640,7 @@ window in `value`.
     The stride of the sliding window for each dimension of the
     input tensor.
 *  <b>`padding`</b>: A string, either `'VALID'` or `'SAME'`. The padding algorithm.
-*  <b>`data_format`</b>: A string. 'NHWC' and 'NCHW" are supported.
+*  <b>`data_format`</b>: A string. 'NHWC' and 'NCHW' are supported.
 *  <b>`name`</b>: Optional name for the operation.
 
 ##### Returns:
@@ -516,7 +664,7 @@ Performs the max pooling on the input.
 *  <b>`strides`</b>: A list of ints that has length >= 4.  The stride of the sliding
     window for each dimension of the input tensor.
 *  <b>`padding`</b>: A string, either `'VALID'` or `'SAME'`. The padding algorithm.
-*  <b>`data_format`</b>: A string. 'NHWC' and 'NCHW" are supported.
+*  <b>`data_format`</b>: A string. 'NHWC' and 'NCHW' are supported.
 *  <b>`name`</b>: Optional name for the operation.
 
 ##### Returns:
@@ -555,6 +703,59 @@ The indices in `argmax` are flattened, so that a maximum value at position
 
 *  <b>`output`</b>: A `Tensor` of type `float32`. The max pooled output tensor.
 *  <b>`argmax`</b>: A `Tensor` of type `Targmax`. 4-D.  The flattened indices of the max values chosen for each output.
+
+
+- - -
+
+### `tf.nn.avg_pool3d(input, ksize, strides, padding, name=None)` {#avg_pool3d}
+
+Performs 3D average pooling on the input.
+
+##### Args:
+
+
+*  <b>`input`</b>: A `Tensor`. Must be one of the following types: `float32`, `float64`, `int64`, `int32`, `uint8`, `uint16`, `int16`, `int8`, `complex64`, `complex128`, `qint8`, `quint8`, `qint32`, `half`.
+    Shape `[batch, depth, rows, cols, channels]` tensor to pool over.
+*  <b>`ksize`</b>: A list of `ints` that has length `>= 5`.
+    1-D tensor of length 5. The size of the window for each dimension of
+    the input tensor. Must have `ksize[0] = ksize[1] = 1`.
+*  <b>`strides`</b>: A list of `ints` that has length `>= 5`.
+    1-D tensor of length 5. The stride of the sliding window for each
+    dimension of `input`. Must have `strides[0] = strides[4] = 1`.
+*  <b>`padding`</b>: A `string` from: `"SAME", "VALID"`.
+    The type of padding algorithm to use.
+*  <b>`name`</b>: A name for the operation (optional).
+
+##### Returns:
+
+  A `Tensor`. Has the same type as `input`.
+  The average pooled output tensor.
+
+
+- - -
+
+### `tf.nn.max_pool3d(input, ksize, strides, padding, name=None)` {#max_pool3d}
+
+Performs 3D max pooling on the input.
+
+##### Args:
+
+
+*  <b>`input`</b>: A `Tensor`. Must be one of the following types: `float32`, `float64`, `int64`, `int32`, `uint8`, `uint16`, `int16`, `int8`, `complex64`, `complex128`, `qint8`, `quint8`, `qint32`, `half`.
+    Shape `[batch, depth, rows, cols, channels]` tensor to pool over.
+*  <b>`ksize`</b>: A list of `ints` that has length `>= 5`.
+    1-D tensor of length 5. The size of the window for each dimension of
+    the input tensor. Must have `ksize[0] = ksize[1] = 1`.
+*  <b>`strides`</b>: A list of `ints` that has length `>= 5`.
+    1-D tensor of length 5. The stride of the sliding window for each
+    dimension of `input`. Must have `strides[0] = strides[4] = 1`.
+*  <b>`padding`</b>: A `string` from: `"SAME", "VALID"`.
+    The type of padding algorithm to use.
+*  <b>`name`</b>: A name for the operation (optional).
+
+##### Returns:
+
+  A `Tensor`. Has the same type as `input`. The max pooled output tensor.
 
 
 
@@ -629,13 +830,12 @@ convolutional neural networks (NIPS 2012)]
 
 - - -
 
-### `tf.nn.sufficient_statistics(x, axes, shift=True, keep_dims=False, name=None)` {#sufficient_statistics}
+### `tf.nn.sufficient_statistics(x, axes, shift=None, keep_dims=False, name=None)` {#sufficient_statistics}
 
 Calculate the sufficient statistics for the mean and variance of `x`.
 
 These sufficient statistics are computed using the one pass algorithm on
-an input that's optionally shifted using the value of the 1st element in `x`.
-See:
+an input that's optionally shifted. See:
 https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Computing_shifted_data
 
 ##### Args:
@@ -643,7 +843,9 @@ https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Computing_shif
 
 *  <b>`x`</b>: A `Tensor`.
 *  <b>`axes`</b>: Array of ints. Axes along which to compute mean and variance.
-*  <b>`shift`</b>: If true, shift the data to provide more numerically stable results.
+*  <b>`shift`</b>: A `Tensor` containing the value by which to shift the data for
+    numerical stability, or `None` if no shift is to be performed. A shift
+    close to the true mean provides the most numerically stable results.
 *  <b>`keep_dims`</b>: produce statistics with the same dimensionality as the input.
 *  <b>`name`</b>: Name used to scope the operations that compute the sufficient stats.
 
@@ -653,7 +855,7 @@ https://en.wikipedia.org/wiki/Algorithms_for_calculating_variance#Computing_shif
   * the count (number of elements to average over).
   * the (possibly shifted) sum of the elements in the array.
   * the (possibly shifted) sum of squares of the elements in the array.
-  * the shift by which the mean must be corrected or None if `shift` is False.
+  * the shift by which the mean must be corrected or None if `shift` is None.
 
 
 - - -
@@ -681,7 +883,7 @@ Calculate the mean and variance of based on the sufficient statistics.
 
 - - -
 
-### `tf.nn.moments(x, axes, name=None, keep_dims=False)` {#moments}
+### `tf.nn.moments(x, axes, shift=None, name=None, keep_dims=False)` {#moments}
 
 Calculate the mean and variance of `x`.
 
@@ -701,6 +903,9 @@ When using these moments for batch normalization (see
 *  <b>`x`</b>: A `Tensor`.
 *  <b>`axes`</b>: array of ints.  Axes along which to compute mean and
     variance.
+*  <b>`shift`</b>: A `Tensor` containing the value by which to shift the data for
+    numerical stability, or `None` if no shift is to be performed. A shift
+    close to the true mean provides the most numerically stable results.
 *  <b>`keep_dims`</b>: produce moments with the same dimensionality as the input.
 *  <b>`name`</b>: Name used to scope the operations that compute the moments.
 
@@ -729,7 +934,7 @@ Computes half the L2 norm of a tensor without the `sqrt`:
 ##### Args:
 
 
-*  <b>`t`</b>: A `Tensor`. Must be one of the following types: `float32`, `float64`, `int64`, `int32`, `uint8`, `uint16`, `int16`, `int8`, `complex64`, `complex128`, `qint8`, `quint8`, `qint32`.
+*  <b>`t`</b>: A `Tensor`. Must be one of the following types: `float32`, `float64`, `int64`, `int32`, `uint8`, `uint16`, `int16`, `int8`, `complex64`, `complex128`, `qint8`, `quint8`, `qint32`, `half`.
     Typically 2-D, but may have any dimensions.
 *  <b>`name`</b>: A name for the operation (optional).
 
@@ -763,7 +968,14 @@ For brevity, let `x = logits`, `z = targets`.  The logistic loss is
     = (1 - z) * x + log(1 + exp(-x))
     = x - x * z + log(1 + exp(-x))
 
-To ensure stability and avoid overflow, the implementation uses
+For x < 0, to avoid overflow in exp(-x), we reformulate the above
+
+      x - x * z + log(1 + exp(-x))
+    = log(exp(x)) - x * z + log(1 + exp(-x))
+    = - x * z + log(1 + exp(x))
+
+Hence, to ensure stability and avoid overflow, the implementation uses this
+equivalent formulation
 
     max(x, 0) - x * z + log(1 + exp(-abs(x)))
 
@@ -800,7 +1012,29 @@ For each batch `i` and class `j` we have
 ##### Args:
 
 
-*  <b>`logits`</b>: A `Tensor`. Must be one of the following types: `float32`, `float64`.
+*  <b>`logits`</b>: A `Tensor`. Must be one of the following types: `half`, `float32`, `float64`.
+    2-D with shape `[batch_size, num_classes]`.
+*  <b>`name`</b>: A name for the operation (optional).
+
+##### Returns:
+
+  A `Tensor`. Has the same type as `logits`. Same shape as `logits`.
+
+
+- - -
+
+### `tf.nn.log_softmax(logits, name=None)` {#log_softmax}
+
+Computes log softmax activations.
+
+For each batch `i` and class `j` we have
+
+    logsoftmax[i, j] = logits[i, j] - log(sum(exp(logits[i])))
+
+##### Args:
+
+
+*  <b>`logits`</b>: A `Tensor`. Must be one of the following types: `half`, `float32`, `float64`.
     2-D with shape `[batch_size, num_classes]`.
 *  <b>`name`</b>: A name for the operation (optional).
 
@@ -822,9 +1056,11 @@ can be a dog or a truck, but not both.
 
 **NOTE:**  While the classes are mutually exclusive, their probabilities
 need not be.  All that is required is that each row of `labels` is
-a valid probability distribution.  If using exclusive `labels`
-(wherein one and only one class is true at a time), see
-`sparse_softmax_cross_entropy_with_logits`.
+a valid probability distribution.  If they are not, the computation of the
+gradient will be incorrect.
+
+If using exclusive `labels` (wherein one and only
+one class is true at a time), see `sparse_softmax_cross_entropy_with_logits`.
 
 **WARNING:** This op expects unscaled logits, since it performs a `softmax`
 on `logits` internally for efficiency.  Do not call this op with the
@@ -864,26 +1100,82 @@ must provide a single specific index for the true class for each row of
 a probability distribution for each entry, see
 `softmax_cross_entropy_with_logits`.
 
-**WARNING:** This op expects unscaled logits, since it performs a `softmax`
+**WARNING:** This op expects unscaled logits, since it performs a softmax
 on `logits` internally for efficiency.  Do not call this op with the
 output of `softmax`, as it will produce incorrect results.
 
-`logits` and must have the shape `[batch_size, num_classes]`
-and the dtype (either `float32` or `float64`).
+`logits` must have the shape `[batch_size, num_classes]`
+and dtype `float32` or `float64`.
 
-`labels` must have the shape `[batch_size]` and the dtype `int64`.
+`labels` must have the shape `[batch_size]` and dtype `int32` or `int64`.
 
 ##### Args:
 
 
 *  <b>`logits`</b>: Unscaled log probabilities.
-*  <b>`labels`</b>: Each entry `labels[i]` must be an index in `[0, num_classes)`.
+*  <b>`labels`</b>: Each entry `labels[i]` must be an index in `[0, num_classes)`. Other
+    values will result in a loss of 0, but incorrect gradient computations.
 *  <b>`name`</b>: A name for the operation (optional).
 
 ##### Returns:
 
   A 1-D `Tensor` of length `batch_size` of the same type as `logits` with the
   softmax cross entropy loss.
+
+
+- - -
+
+### `tf.nn.weighted_cross_entropy_with_logits(logits, targets, pos_weight, name=None)` {#weighted_cross_entropy_with_logits}
+
+Computes a weighted cross entropy.
+
+This is like `sigmoid_cross_entropy_with_logits()` except that `pos_weight`,
+allows one to trade off recall and precision by up- or down-weighting the
+cost of a positive error relative to a negative error.
+
+The usual cross-entropy cost is defined as:
+
+  targets * -log(sigmoid(logits)) + (1 - targets) * -log(1 - sigmoid(logits))
+
+The argument `pos_weight` is used as a multiplier for the positive targets:
+
+  targets * -log(sigmoid(logits)) * pos_weight +
+      (1 - targets) * -log(1 - sigmoid(logits))
+
+For brevity, let `x = logits`, `z = targets`, `q = pos_weight`.
+The loss is:
+
+      qz * -log(sigmoid(x)) + (1 - z) * -log(1 - sigmoid(x))
+    = qz * -log(1 / (1 + exp(-x))) + (1 - z) * -log(exp(-x) / (1 + exp(-x)))
+    = qz * log(1 + exp(-x)) + (1 - z) * (-log(exp(-x)) + log(1 + exp(-x)))
+    = qz * log(1 + exp(-x)) + (1 - z) * (x + log(1 + exp(-x))
+    = (1 - z) * x + (qz +  1 - z) * log(1 + exp(-x))
+    = (1 - z) * x + (1 + (q - 1) * z) * log(1 + exp(-x))
+
+Setting `l = (1 + (q - 1) * z)`, to ensure stability and avoid overflow,
+the implementation uses
+
+    (1 - z) * x + l * (log(1 + exp(-abs(x))) + max(-x, 0))
+
+`logits` and `targets` must have the same type and shape.
+
+##### Args:
+
+
+*  <b>`logits`</b>: A `Tensor` of type `float32` or `float64`.
+*  <b>`targets`</b>: A `Tensor` of the same type and shape as `logits`.
+*  <b>`pos_weight`</b>: A coefficient to use on the positive examples.
+*  <b>`name`</b>: A name for the operation (optional).
+
+##### Returns:
+
+  A `Tensor` of the same shape as `logits` with the componentwise
+  weightedlogistic losses.
+
+##### Raises:
+
+
+*  <b>`ValueError`</b>: If `logits` and `targets` do not have the same shape.
 
 
 
@@ -1177,7 +1469,7 @@ This operation is for training only.  It is generally an underestimate of
 the full softmax loss.
 
 At inference time, you can compute full softmax probabilities with the
-expression `tf.nn.softmax(tf.matmul(inputs, weights) + biases)`.
+expression `tf.nn.softmax(tf.matmul(inputs, tf.transpose(weights)) + biases)`.
 
 See our [Candidate Sampling Algorithms Reference]
 (../../extras/candidate_sampling.pdf)
@@ -1229,14 +1521,14 @@ classes when using one of the sampled loss functions above.
 Samples a set of classes using a uniform base distribution.
 
 This operation randomly samples a tensor of sampled classes
-(`sampled_candidates`) from the range of integers `[0, range_max]`.
+(`sampled_candidates`) from the range of integers `[0, range_max)`.
 
 The elements of `sampled_candidates` are drawn without replacement
 (if `unique=True`) or with replacement (if `unique=False`) from
 the base distribution.
 
 The base distribution for this operation is the uniform distribution
-over the range of integers `[0, range_max]`.
+over the range of integers `[0, range_max)`.
 
 In addition, this operation returns tensors `true_expected_count`
 and `sampled_expected_count` representing the number of times each
@@ -1281,7 +1573,7 @@ compute them approximately.
 Samples a set of classes using a log-uniform (Zipfian) base distribution.
 
 This operation randomly samples a tensor of sampled classes
-(`sampled_candidates`) from the range of integers `[0, range_max]`.
+(`sampled_candidates`) from the range of integers `[0, range_max)`.
 
 The elements of `sampled_candidates` are drawn without replacement
 (if `unique=True`) or with replacement (if `unique=False`) from
@@ -1340,7 +1632,7 @@ compute them approximately.
 Samples a set of classes from a distribution learned during training.
 
 This operation randomly samples a tensor of sampled classes
-(`sampled_candidates`) from the range of integers `[0, range_max]`.
+(`sampled_candidates`) from the range of integers `[0, range_max)`.
 
 The elements of `sampled_candidates` are drawn without replacement
 (if `unique=True`) or with replacement (if `unique=False`) from
@@ -1348,7 +1640,7 @@ the base distribution.
 
 The base distribution for this operation is constructed on the fly
 during training.  It is a unigram distribution over the target
-classes seen so far during training.  Every integer in `[0, range_max]`
+classes seen so far during training.  Every integer in `[0, range_max)`
 begins with a weight of 1, and is incremented by 1 each time it is
 seen as a target class.  The base distribution is not saved to checkpoints,
 so it is reset when the model is reloaded.
@@ -1396,7 +1688,7 @@ compute them approximately.
 Samples a set of classes using the provided (fixed) base distribution.
 
 This operation randomly samples a tensor of sampled classes
-(`sampled_candidates`) from the range of integers `[0, range_max]`.
+(`sampled_candidates`) from the range of integers `[0, range_max)`.
 
 The elements of `sampled_candidates` are drawn without replacement
 (if `unique=True`) or with replacement (if `unique=False`) from
@@ -1528,9 +1820,9 @@ Batch normalization.
 
 As described in http://arxiv.org/abs/1502.03167.
 Normalizes a tensor by `mean` and `variance`, and applies (optionally) a
-`scale` \\(\gamma\\) to it, as well as an `offest` \\(eta\\):
+`scale` \\(\gamma\\) to it, as well as an `offset` \\(\beta\\):
 
-\\(rac{\gamma(x-\mu)}{\sigma}+eta\\)
+\\(\frac{\gamma(x-\mu)}{\sigma}+\beta\\)
 
 `mean`, `variance`, `offset` and `scale` are all expected to be of one of two
 shapes:
@@ -1557,7 +1849,7 @@ shapes:
 *  <b>`x`</b>: Input `Tensor` of arbitrary dimensionality.
 *  <b>`mean`</b>: A mean `Tensor`.
 *  <b>`variance`</b>: A variance `Tensor`.
-*  <b>`offset`</b>: An offset `Tensor`, often denoted \\(eta\\) in equations, or
+*  <b>`offset`</b>: An offset `Tensor`, often denoted \\(\beta\\) in equations, or
     None. If present, will be added to the normalized tensor.
 *  <b>`scale`</b>: A scale `Tensor`, often denoted \\(\gamma\\) in equations, or
     `None`. If present, the scale is applied to the normalized tensor.

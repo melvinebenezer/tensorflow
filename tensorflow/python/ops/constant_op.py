@@ -66,9 +66,11 @@ print(sess.run(norm))
 print(sess.run(norm))
 
 # Set an op-level seed to generate repeatable sequences across sessions.
-c = tf.constant([[1, 2], [3, 4], [5, 6]])
+norm = tf.random_normal([2, 3], seed=1234)
 sess = tf.Session()
-norm = tf.random_normal(c, seed=1234)
+print(sess.run(norm))
+print(sess.run(norm))
+sess = tf.Session()
 print(sess.run(norm))
 print(sess.run(norm))
 ```
@@ -92,8 +94,8 @@ print(sess.run(var))
 @@random_uniform
 @@random_shuffle
 @@random_crop
+@@multinomial
 @@set_random_seed
-
 """
 
 # Must be separate from array_ops to avoid a cyclic dependency.
